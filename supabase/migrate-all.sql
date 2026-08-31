@@ -50,6 +50,7 @@
 \ir migrations/20260828140000_fix_message_insert_rls.sql
 \ir migrations/20260828150000_repair_messages_insert_rls.sql
 \ir migrations/20260828160000_staff_attendance.sql
+\ir migrations/20260829000000_fix_ambiguous_assignment_id_in_senior_transition.sql
 \ir migrations/20260829100000_repair_staff_attendance_clocking.sql
 \ir migrations/20260829110000_staff_attendance_schedule.sql
 \ir migrations/20260829120000_staff_attendance_admin_policies.sql

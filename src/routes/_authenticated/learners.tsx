@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   BookOpenCheck,
@@ -60,6 +60,10 @@ import { useSchool } from "@/hooks/use-school";
 import { GRADE_LABELS, type CbeGrade } from "@/lib/cbe";
 import { canViewFinancePanel, getPersonDisplayName } from "@/lib/detail-panel";
 import { formatDate, formatKES, initials, KE_PHONE_REGEX, normalizeKePhone } from "@/lib/format";
+import {
+  formatSeniorPathwaySummary,
+  isSeniorSchoolGrade,
+} from "@/lib/pathway-display";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/learners")({
@@ -183,7 +187,7 @@ function LearnersPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["learners", schoolId, isTeacherScoped ? "teacher" : "all"],
     queryFn: async () => {
-      const [learners, streams] = await Promise.all([
+      const [learners, streams, pathwayAssignments] = await Promise.all([
         (() => {
           let query = supabase
             .from("learners")
@@ -207,13 +211,41 @@ function LearnersPage() {
           .select("id, grade, name, capacity")
           .eq("school_id", schoolId)
           .eq("is_active", true),
+        supabase
+          .from("student_pathway_assignments")
+          .select(
+            "learner_id, grade, senior_pathways(name), pathway_tracks(name), pathway_strands(name), subject_combinations(name)",
+          )
+          .eq("school_id", schoolId)
+          .eq("status", "current"),
       ]);
       if (learners.error) throw learners.error;
-      return { learners: (learners.data ?? []) as LearnerRow[], streams: streams.data ?? [] };
+      if (pathwayAssignments.error) throw pathwayAssignments.error;
+      return {
+        learners: (learners.data ?? []) as LearnerRow[],
+        streams: streams.data ?? [],
+        pathwayAssignments: (pathwayAssignments.data ?? []) as Array<{
+          learner_id: string;
+          grade: string | null;
+          senior_pathways?: { name?: string | null } | null;
+          pathway_tracks?: { name?: string | null } | null;
+          pathway_strands?: { name?: string | null } | null;
+          subject_combinations?: { name?: string | null } | null;
+        }>,
+      };
     },
   });
 
   const streams = data?.streams ?? [];
+  const pathwaySummaryByLearner = useMemo(() => {
+    const summaryMap = new Map<string, string>();
+    for (const assignment of data?.pathwayAssignments ?? []) {
+      if (!assignment.learner_id) continue;
+      const summary = formatSeniorPathwaySummary(assignment);
+      if (summary !== "Not captured") summaryMap.set(assignment.learner_id, summary);
+    }
+    return summaryMap;
+  }, [data?.pathwayAssignments]);
   const rows = useMemo(() => {
     const search = query.trim().toLowerCase();
     return (data?.learners ?? []).filter((learner) => {
@@ -401,56 +433,69 @@ function LearnersPage() {
     queryKey: ["learner-detail-drawer", schoolId, selectedLearnerId],
     enabled: Boolean(selectedLearnerId),
     queryFn: async () => {
-      const [learner, attendance, marks, guardians, invoices, payments] = await Promise.all([
-        supabase
-          .from("learners")
-          .select(
-            "id, admission_number, upi_number, first_name, middle_name, last_name, gender, current_grade, current_stream_id, admission_date, date_of_birth, assessment_number, birth_certificate_no, boarding_status, transport_route, medical_alerts, emergency_contact_name, emergency_contact_phone, exit_date, exit_reason, status, photo_url, current_stream_id",
-          )
-          .eq("school_id", schoolId)
-          .eq("id", selectedLearnerId!)
-          .eq("is_archived", false)
-          .single(),
-        supabase
-          .from("attendance_records")
-          .select("id, status, attendance_date")
-          .eq("school_id", schoolId)
-          .eq("learner_id", selectedLearnerId!)
-          .order("attendance_date", { ascending: false })
-          .limit(60),
-        supabase
-          .from("marks")
-          .select(
-            "id, raw_score, is_absent, is_exempt, assessment_id, assessments(title, assessment_date, learning_area_id, learning_areas(name))",
-          )
-          .eq("school_id", schoolId)
-          .eq("learner_id", selectedLearnerId!)
-          .order("created_at", { ascending: false })
-          .limit(30),
-        supabase
-          .from("learner_guardians")
-          .select("id, guardians(full_name, relationship, phone, email, address)")
-          .eq("school_id", schoolId)
-          .eq("learner_id", selectedLearnerId!),
-        canViewFinance
-          ? supabase
-              .from("invoices")
-              .select("id, invoice_number, total, due_date, issue_date, status")
-              .eq("school_id", schoolId)
-              .eq("learner_id", selectedLearnerId!)
-              .order("issue_date", { ascending: false })
-          : Promise.resolve({ data: [], error: null }),
-        canViewFinance
-          ? supabase
-              .from("payments")
-              .select("id, amount, method, reference, paid_at, invoice_id")
-              .eq("school_id", schoolId)
-              .eq("learner_id", selectedLearnerId!)
-              .order("paid_at", { ascending: false })
-          : Promise.resolve({ data: [], error: null }),
-      ]);
+      const [learner, attendance, marks, guardians, invoices, payments, pathwayAssignment] =
+        await Promise.all([
+          supabase
+            .from("learners")
+            .select(
+              "id, admission_number, upi_number, first_name, middle_name, last_name, gender, current_grade, current_stream_id, admission_date, date_of_birth, assessment_number, birth_certificate_no, boarding_status, transport_route, medical_alerts, emergency_contact_name, emergency_contact_phone, exit_date, exit_reason, status, photo_url, current_stream_id",
+            )
+            .eq("school_id", schoolId)
+            .eq("id", selectedLearnerId!)
+            .eq("is_archived", false)
+            .single(),
+          supabase
+            .from("attendance_records")
+            .select("id, status, attendance_date")
+            .eq("school_id", schoolId)
+            .eq("learner_id", selectedLearnerId!)
+            .order("attendance_date", { ascending: false })
+            .limit(60),
+          supabase
+            .from("marks")
+            .select(
+              "id, raw_score, is_absent, is_exempt, assessment_id, assessments(title, assessment_date, learning_area_id, learning_areas(name))",
+            )
+            .eq("school_id", schoolId)
+            .eq("learner_id", selectedLearnerId!)
+            .order("created_at", { ascending: false })
+            .limit(30),
+          supabase
+            .from("learner_guardians")
+            .select("id, guardians(full_name, relationship, phone, email, address)")
+            .eq("school_id", schoolId)
+            .eq("learner_id", selectedLearnerId!),
+          canViewFinance
+            ? supabase
+                .from("invoices")
+                .select("id, invoice_number, total, due_date, issue_date, status")
+                .eq("school_id", schoolId)
+                .eq("learner_id", selectedLearnerId!)
+                .order("issue_date", { ascending: false })
+            : Promise.resolve({ data: [], error: null }),
+          canViewFinance
+            ? supabase
+                .from("payments")
+                .select("id, amount, method, reference, paid_at, invoice_id")
+                .eq("school_id", schoolId)
+                .eq("learner_id", selectedLearnerId!)
+                .order("paid_at", { ascending: false })
+            : Promise.resolve({ data: [], error: null }),
+          supabase
+            .from("student_pathway_assignments")
+            .select(
+              "id, grade, pathway_id, track_id, strand_id, subject_combination_id, senior_pathways(name), pathway_tracks(name), pathway_strands(name), subject_combinations(name)",
+            )
+            .eq("school_id", schoolId)
+            .eq("learner_id", selectedLearnerId!)
+            .eq("status", "current")
+            .maybeSingle(),
+        ]);
 
       if (learner.error) throw learner.error;
+      if (pathwayAssignment.error && pathwayAssignment.error.code !== "PGRST116") {
+        throw pathwayAssignment.error;
+      }
       let learnerMarks = (marks.data ?? []) as Array<{
         id: string;
         raw_score: number | null;
@@ -494,6 +539,7 @@ function LearnersPage() {
         }),
         invoices: invoices.data ?? [],
         payments: payments.data ?? [],
+        pathwayAssignment: pathwayAssignment.data ?? null,
       };
     },
   });
@@ -502,6 +548,9 @@ function LearnersPage() {
     const name = [learner.first_name, learner.middle_name, learner.last_name]
       .filter(Boolean)
       .join(" ");
+    const pathwaySummary = isSeniorSchoolGrade(learner.current_grade)
+      ? pathwaySummaryByLearner.get(learner.id) ?? "No pathway selected"
+      : null;
 
     const openLearnerDrawer = (event: React.MouseEvent<HTMLElement>) => {
       event.preventDefault();
@@ -561,9 +610,16 @@ function LearnersPage() {
             <span className="capitalize">{learner.gender ?? "—"}</span>
             <span className="text-xs text-muted-foreground sm:hidden">Gender</span>
           </div>
-          <div className="text-sm">
-            <span className="text-muted-foreground sm:hidden">Admitted: </span>
-            {formatDate(learner.admission_date)}
+          <div className="space-y-1 text-sm">
+            <div>
+              <span className="text-muted-foreground sm:hidden">Admitted: </span>
+              {formatDate(learner.admission_date)}
+            </div>
+            {pathwaySummary && (
+              <div className="max-w-[18rem] truncate text-[11px] font-medium text-teal-700">
+                {pathwaySummary}
+              </div>
+            )}
           </div>
           <Badge variant={STATUS_TONE[learner.status] ?? "secondary"} className="w-fit capitalize">
             {learner.status}
@@ -622,6 +678,12 @@ function LearnersPage() {
     : "Learner profile";
   const drawerAttendance = selectedLearnerDetail.data?.attendance ?? [];
   const drawerMarks = selectedLearnerDetail.data?.marks ?? [];
+  const drawerPathwaySummary = isSeniorSchoolGrade(drawerLearner?.current_grade)
+    ? formatSeniorPathwaySummary(selectedLearnerDetail.data?.pathwayAssignment)
+    : null;
+  const hasDrawerPathway = Boolean(
+    drawerPathwaySummary && drawerPathwaySummary !== "Not captured",
+  );
   const averageScore = drawerMarks.length
     ? Math.round(
         (drawerMarks.reduce((total, mark) => total + Number(mark.raw_score ?? 0), 0) /
@@ -665,9 +727,60 @@ function LearnersPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <section className="min-w-0 space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-teal-50/30 p-4 shadow-sm ring-1 ring-slate-100">
               <SectionHeader icon={UserRound} label="Profile summary" />
-              <div className="grid min-w-0 gap-x-5 gap-y-3 sm:grid-cols-2">
+              {drawerPathwaySummary && (
+                <div
+                  className={cn(
+                    "rounded-2xl border p-4 shadow-sm transition-colors",
+                    hasDrawerPathway
+                      ? "border-teal-200 bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50"
+                      : "border-amber-200 bg-gradient-to-r from-amber-50 via-yellow-50 to-orange-50",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={cn(
+                          "flex size-8 items-center justify-center rounded-full border",
+                          hasDrawerPathway
+                            ? "border-teal-200 bg-white text-teal-700"
+                            : "border-amber-200 bg-white text-amber-700",
+                        )}
+                      >
+                        <GraduationCap className="size-4" />
+                      </div>
+                      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                        Senior pathway
+                      </span>
+                    </div>
+                    <Badge
+                      className={cn(
+                        "border hover:bg-white",
+                        hasDrawerPathway
+                          ? "border-teal-200 bg-white text-teal-700"
+                          : "border-amber-200 bg-white text-amber-700",
+                      )}
+                    >
+                      {drawerLearner.current_grade}
+                    </Badge>
+                  </div>
+                  <p
+                    className={cn(
+                      "mt-3 text-sm font-semibold leading-6",
+                      hasDrawerPathway ? "text-slate-900" : "text-amber-800",
+                    )}
+                  >
+                    {hasDrawerPathway ? drawerPathwaySummary : "No senior pathway selected yet"}
+                  </p>
+                  {!hasDrawerPathway && (
+                    <p className="mt-1 text-xs text-amber-700/80">
+                      Add the pathway, track and subject combination for this learner from the update form.
+                    </p>
+                  )}
+                </div>
+              )}
+              <div className="grid min-w-0 gap-x-4 gap-y-3 sm:grid-cols-2">
                 <FactItem icon={FileText} label="Admission number" value={drawerLearner.admission_number} />
                 <FactItem icon={UserCheck} label="Gender" value={drawerLearner.gender ?? "Not captured"} />
                 <FactItem icon={Cake} label="Date of birth" value={formatDate(drawerLearner.date_of_birth)} />
@@ -684,18 +797,18 @@ function LearnersPage() {
             </section>
 
             {school.can("principal", "deputy", "registrar", "super_admin", "admin") && (
-              <section className="min-w-0 space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-teal-50/20 p-4 shadow-sm ring-1 ring-slate-100">
                 <SectionHeader icon={Users} label="Parent / guardian" />
                 {selectedLearnerDetail.data?.guardians.length ? (
                   <div className="grid gap-3 sm:grid-cols-2">
                     {selectedLearnerDetail.data.guardians.map((guardian) => (
-                      <div key={guardian.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div key={guardian.id} className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm transition-shadow hover:shadow-md">
                         <div className="font-semibold text-slate-900">{guardian.full_name}</div>
-                        <div className="mt-1 text-xs font-medium uppercase tracking-[0.04em] text-slate-500">{guardian.relationship}</div>
+                        <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{guardian.relationship}</div>
                         <div className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-                          {guardian.phone && <div className="flex items-center gap-2"><Phone className="size-4 text-teal-600" />{guardian.phone}</div>}
+                          {guardian.phone && <div className="flex items-center gap-2 break-words"><Phone className="size-4 shrink-0 text-teal-600" />{guardian.phone}</div>}
                           {guardian.email && <div className="flex items-center gap-2 break-words"><Mail className="size-4 shrink-0 text-teal-600" />{guardian.email}</div>}
-                          {guardian.address && <div>{guardian.address}</div>}
+                          {guardian.address && <div className="break-words text-slate-600">{guardian.address}</div>}
                         </div>
                       </div>
                     ))}
@@ -704,7 +817,7 @@ function LearnersPage() {
               </section>
             )}
 
-            <section className="min-w-0 space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-teal-50/20 p-4 shadow-sm ring-1 ring-slate-100">
               <SectionHeader icon={BookOpenCheck} label="Academic overview" />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <StatCard icon={GraduationCap} label="Average score" value={averageScore === null ? "—" : String(averageScore)} support={drawerMarks.length ? "Across assessments" : "No scores yet"} />
@@ -747,7 +860,7 @@ function LearnersPage() {
             </section>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <section className="min-w-0 space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-amber-50/20 to-teal-50/20 p-4 shadow-sm ring-1 ring-slate-100">
                 <SectionHeader icon={Wallet} label="Fee account" />
                 {canViewFinance ? (
                   <div className="text-sm text-slate-600">
@@ -757,25 +870,43 @@ function LearnersPage() {
                       const paidTotal = paymentRows.reduce((sum: number, payment: any) => sum + Number(payment.amount || 0), 0);
                       const totalFees = invoiceRows.reduce((sum: number, invoice: any) => sum + Number(invoice.total || 0), 0);
                       const outstandingTotal = Math.max(0, totalFees - paidTotal);
-                      return <div className="grid grid-cols-3 gap-2"><MoneyStat label="Total fees" value={formatKES(totalFees)} /><MoneyStat label="Paid" value={formatKES(paidTotal)} tone="teal" /><MoneyStat label="Outstanding" value={formatKES(outstandingTotal)} tone="amber" /></div>;
+                      return (
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <MoneyStat label="Total fees" value={formatKES(totalFees)} />
+                          <MoneyStat label="Paid" value={formatKES(paidTotal)} tone="teal" />
+                          <MoneyStat label="Outstanding" value={formatKES(outstandingTotal)} tone="amber" />
+                        </div>
+                      );
                     })() : <EmptyState icon={Wallet} message="No payment history recorded." />}
                   </div>
-                ) : <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">Restricted — finance details are hidden for this role.</div>}
+                ) : <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">Restricted — finance details are hidden for this role.</div>}
               </section>
 
-              <section className="min-w-0 space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-teal-50/20 p-4 shadow-sm ring-1 ring-slate-100">
                 <SectionHeader icon={FileText} label="Academic reports" />
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="min-w-0"><div className="text-sm font-semibold text-slate-900">Current learner report</div><div className="mt-1 text-xs text-slate-500">{drawerLearner.current_grade ?? "Class not assigned"} · {formatDate(drawerLearner.admission_date)}</div></div>
-                  <Button type="button" size="sm" className="shrink-0 bg-teal-600 text-sm font-semibold text-white hover:bg-teal-700" onClick={() => window.location.assign("/reports")}><FileText className="mr-1.5 size-4" /> View report</Button>
+                <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-teal-50/40 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-slate-900">Current learner report</div>
+                    <div className="mt-1 text-xs text-slate-500">{drawerLearner.current_grade ?? "Class not assigned"} · {formatDate(drawerLearner.admission_date)}</div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full justify-center bg-teal-600 text-sm font-semibold text-white hover:bg-teal-700 sm:w-auto"
+                    onClick={() => window.location.assign("/reports")}
+                  >
+                    <FileText className="mr-1.5 size-4" /> View report
+                  </Button>
                 </div>
               </section>
             </div>
 
-            <section className="min-w-0 space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-amber-50/20 p-4 shadow-sm ring-1 ring-slate-100">
               <SectionHeader icon={Flag} label="Notes & flags" />
-              <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-3 text-sm leading-6 text-slate-600">
-                {drawerLearner.medical_alerts?.trim() || drawerLearner.exit_reason || "No notes or flags recorded for this learner."}
+              <div className="rounded-xl border border-dashed border-slate-200 bg-gradient-to-r from-slate-50 via-slate-50 to-teal-50/40 p-4 text-sm leading-6 text-slate-600">
+                <div className="whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-700">
+                  {drawerLearner.medical_alerts?.trim() || drawerLearner.exit_reason || "No notes or flags recorded for this learner."}
+                </div>
               </div>
             </section>
           </div>
@@ -1290,12 +1421,12 @@ function StatCard({
   support: string;
 }) {
   return (
-    <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500">
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white px-3 py-3 shadow-sm transition-shadow hover:shadow-md">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
         <Icon className="size-3.5 text-teal-600" />
         <span className="truncate">{label}</span>
       </div>
-      <div className="mt-2 text-xl font-semibold leading-6 tracking-[-0.01em] text-slate-950">{value}</div>
+      <div className="mt-2 text-xl font-semibold leading-6 tracking-[-0.02em] text-slate-950">{value}</div>
       <div className="mt-1 text-xs leading-5 text-slate-500">{support}</div>
     </div>
   );
@@ -1311,9 +1442,25 @@ function MoneyStat({
   tone?: "neutral" | "teal" | "amber";
 }) {
   return (
-    <div className={cn("min-w-0 rounded-lg border px-3 py-3", tone === "amber" ? "border-amber-200 bg-amber-50" : tone === "teal" ? "border-teal-100 bg-teal-50/60" : "border-slate-200 bg-slate-50")}>
-      <div className="text-[11px] font-medium uppercase tracking-[0.04em] text-slate-500">{label}</div>
-      <div className={cn("mt-2 whitespace-nowrap text-[15px] font-semibold leading-5", tone === "amber" ? "text-amber-700" : tone === "teal" ? "text-teal-700" : "text-slate-950")}>{value}</div>
+    <div
+      className={cn(
+        "min-w-0 rounded-xl border px-3 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md",
+        tone === "amber"
+          ? "border-amber-200 bg-gradient-to-br from-amber-50 to-white"
+          : tone === "teal"
+            ? "border-teal-100 bg-gradient-to-br from-teal-50/80 to-white"
+            : "border-slate-200 bg-gradient-to-br from-slate-50 to-white",
+      )}
+    >
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</div>
+      <div
+        className={cn(
+          "mt-2 break-words text-[13px] font-semibold leading-5 sm:text-[15px]",
+          tone === "amber" ? "text-amber-700" : tone === "teal" ? "text-teal-700" : "text-slate-950",
+        )}
+      >
+        {value}
+      </div>
     </div>
   );
 }
@@ -1572,6 +1719,7 @@ function EditLearnerDialog({
   onDone: () => void;
 }) {
   const school = useSchool();
+  const qc = useQueryClient();
   const [form, setForm] = useState({
     first_name: learner.first_name,
     middle_name: learner.middle_name ?? "",
@@ -1684,6 +1832,53 @@ function EditLearnerDialog({
         });
         if (classHistoryError) throw classHistoryError;
       }
+      if (["G10", "G11", "G12"].includes(nextGrade)) {
+        const hasExistingPathway = seniorSchoolPathwayQuery.data?.assignment;
+        const pathwayPayload = {
+          school_id: schoolId,
+          learner_id: learner.id,
+          academic_year_id: school.academicYearId,
+          grade: nextGrade,
+          pathway_id: pathwayForm.pathway_id || null,
+          track_id: pathwayForm.track_id || null,
+          strand_id: pathwayForm.strand_id || null,
+          subject_combination_id: pathwayForm.subject_combination_id || null,
+          status: "current",
+          approved_by: school.userId,
+          approved_at: new Date().toISOString(),
+          change_reason: "Profile update",
+        };
+        if (hasExistingPathway) {
+          const { error: pathwayUpdateError } = await supabase
+            .from("student_pathway_assignments")
+            .update({
+              ...pathwayPayload,
+              approved_by: school.userId,
+              approved_at: new Date().toISOString(),
+              change_reason: "Profile update",
+            })
+            .eq("id", hasExistingPathway.id)
+            .eq("school_id", schoolId);
+          if (pathwayUpdateError) throw pathwayUpdateError;
+        } else {
+          const { error: pathwayInsertError } = await supabase
+            .from("student_pathway_assignments")
+            .insert(pathwayPayload);
+          if (pathwayInsertError) throw pathwayInsertError;
+        }
+        const { error: learnerPathwayError } = await supabase
+          .from("learners")
+          .update({
+            senior_school_pathway_id: pathwayForm.pathway_id || null,
+            senior_school_track_id: pathwayForm.track_id || null,
+            senior_school_combination_id: pathwayForm.subject_combination_id || null,
+            pathway_selection_status: "approved",
+            pathway_selected_at: new Date().toISOString(),
+          })
+          .eq("id", learner.id)
+          .eq("school_id", schoolId);
+        if (learnerPathwayError) throw learnerPathwayError;
+      }
       if (statusChanged) {
         const lifecycle = supabase as any;
         const { error: statusHistoryError } = await lifecycle
@@ -1723,12 +1918,100 @@ function EditLearnerDialog({
     },
     onSuccess: () => {
       toast.success("Learner updated successfully.");
+      void qc.invalidateQueries({ queryKey: ["learners", schoolId] });
+      void qc.invalidateQueries({ queryKey: ["learner-detail-drawer", schoolId, learner.id] });
       onDone();
     },
     onError: (error) =>
       toast.error("The learner could not be updated.", { description: error.message }),
   });
   const gradeStreams = streams.filter((stream) => stream.grade === form.current_grade);
+
+  const seniorSchoolPathwayQuery = useQuery({
+    queryKey: ["learner-senior-pathway-config", schoolId],
+    enabled: ["G10", "G11", "G12"].includes(form.current_grade),
+    queryFn: async () => {
+      const [pathways, tracks, strands, combinations, assignment] = await Promise.all([
+        supabase
+          .from("senior_pathways")
+          .select("id, name, code")
+          .eq("school_id", schoolId)
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("pathway_tracks")
+          .select("id, pathway_id, name, code")
+          .eq("school_id", schoolId)
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("pathway_strands")
+          .select("id, track_id, name, code")
+          .eq("school_id", schoolId)
+          .eq("is_active", true)
+          .order("name"),
+        supabase
+          .from("subject_combinations")
+          .select("id, pathway_id, track_id, name, code")
+          .eq("school_id", schoolId)
+          .eq("status", "active")
+          .order("name"),
+        supabase
+          .from("student_pathway_assignments")
+          .select(
+            "id, pathway_id, track_id, strand_id, subject_combination_id, grade, status",
+          )
+          .eq("school_id", schoolId)
+          .eq("learner_id", learner.id)
+          .eq("status", "current")
+          .maybeSingle(),
+      ]);
+      if (pathways.error) throw pathways.error;
+      if (tracks.error) throw tracks.error;
+      if (strands.error) throw strands.error;
+      if (combinations.error) throw combinations.error;
+      if (assignment.error && assignment.error.code !== "PGRST116") throw assignment.error;
+      return {
+        pathways: pathways.data ?? [],
+        tracks: tracks.data ?? [],
+        strands: strands.data ?? [],
+        combinations: combinations.data ?? [],
+        assignment: assignment.data ?? null,
+      };
+    },
+  });
+
+  const [pathwayForm, setPathwayForm] = useState({
+    pathway_id: "",
+    track_id: "",
+    strand_id: "",
+    subject_combination_id: "",
+  });
+
+  useEffect(() => {
+    if (!seniorSchoolPathwayQuery.data) return;
+    const assignment = seniorSchoolPathwayQuery.data.assignment;
+    const nextForm = {
+      pathway_id: assignment?.pathway_id ?? "",
+      track_id: assignment?.track_id ?? "",
+      strand_id: assignment?.strand_id ?? "",
+      subject_combination_id: assignment?.subject_combination_id ?? "",
+    };
+    setPathwayForm(nextForm);
+  }, [seniorSchoolPathwayQuery.data]);
+
+  const visibleTracks = (seniorSchoolPathwayQuery.data?.tracks ?? []).filter(
+    (track) => track.pathway_id === pathwayForm.pathway_id,
+  );
+  const visibleStrands = (seniorSchoolPathwayQuery.data?.strands ?? []).filter(
+    (strand) => strand.track_id === pathwayForm.track_id,
+  );
+  const visibleCombinations = (seniorSchoolPathwayQuery.data?.combinations ?? []).filter(
+    (combination) =>
+      combination.pathway_id === pathwayForm.pathway_id &&
+      combination.track_id === pathwayForm.track_id,
+  );
+
   function submit() {
     if (
       form.first_name.trim().length < 2 ||
@@ -1737,6 +2020,16 @@ function EditLearnerDialog({
     ) {
       toast.warning("Enter the learner name and select a grade.");
       return;
+    }
+    if (["G10", "G11", "G12"].includes(form.current_grade)) {
+      if (!pathwayForm.pathway_id) {
+        toast.warning("Select the learner's senior pathway before saving.");
+        return;
+      }
+      if (!pathwayForm.subject_combination_id) {
+        toast.warning("Select the learner's subject combination before saving.");
+        return;
+      }
     }
     mutation.mutate();
   }
@@ -1858,6 +2151,116 @@ function EditLearnerDialog({
             </SelectContent>
           </Select>
         </Field>
+        {[
+          "G10",
+          "G11",
+          "G12",
+        ].includes(form.current_grade) && (
+          <>
+            <div className="sm:col-span-2 rounded-xl border border-teal-200 bg-gradient-to-r from-teal-50 to-emerald-50 p-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-teal-700">
+                  Senior school pathway
+                </span>
+                <Badge className="border-teal-200 bg-white text-teal-700 hover:bg-white">
+                  {form.current_grade}
+                </Badge>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Pathway">
+                  <Select
+                    value={pathwayForm.pathway_id}
+                    onValueChange={(value) => {
+                      setPathwayForm((current) => ({
+                        ...current,
+                        pathway_id: value,
+                        track_id: "",
+                        strand_id: "",
+                        subject_combination_id: "",
+                      }));
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select pathway" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(seniorSchoolPathwayQuery.data?.pathways ?? []).map((pathway) => (
+                        <SelectItem key={pathway.id} value={pathway.id}>
+                          {pathway.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Track">
+                  <Select
+                    value={pathwayForm.track_id}
+                    onValueChange={(value) => {
+                      setPathwayForm((current) => ({
+                        ...current,
+                        track_id: value,
+                        strand_id: "",
+                        subject_combination_id: "",
+                      }));
+                    }}
+                    disabled={!visibleTracks.length}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select track" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {visibleTracks.map((track) => (
+                        <SelectItem key={track.id} value={track.id}>
+                          {track.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Strand">
+                  <Select
+                    value={pathwayForm.strand_id}
+                    onValueChange={(value) =>
+                      setPathwayForm((current) => ({ ...current, strand_id: value }))
+                    }
+                    disabled={!visibleStrands.length}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select strand" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {visibleStrands.map((strand) => (
+                        <SelectItem key={strand.id} value={strand.id}>
+                          {strand.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label="Subject combination">
+                  <Select
+                    value={pathwayForm.subject_combination_id}
+                    onValueChange={(value) =>
+                      setPathwayForm((current) => ({ ...current, subject_combination_id: value }))
+                    }
+                    disabled={!visibleCombinations.length}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select combination" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {visibleCombinations.map((combination) => (
+                        <SelectItem key={combination.id} value={combination.id}>
+                          {combination.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+              </div>
+            </div>
+          </>
+        )}
         <Field label="Boarding status">
           <Select value={form.boarding_status} onValueChange={(v) => set("boarding_status", v)}>
             <SelectTrigger>

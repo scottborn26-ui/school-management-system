@@ -47,7 +47,7 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  assignment_id uuid;
+  v_assignment_id uuid;
   previous_assignment_id uuid;
   previous_pathway_id uuid;
 BEGIN
@@ -121,7 +121,7 @@ BEGIN
   CROSS JOIN unnest(_learning_area_ids) AS area_id
   ON CONFLICT (assignment_id, learning_area_id) DO NOTHING;
 
-  SELECT id INTO assignment_id
+  SELECT id INTO v_assignment_id
   FROM public.student_pathway_assignments
   WHERE learner_id = _learner_id
     AND school_id = _school_id
@@ -191,14 +191,14 @@ BEGIN
     _school_id,
     _learner_id,
     previous_assignment_id,
-    assignment_id,
+    v_assignment_id,
     previous_pathway_id,
     _pathway_id,
     COALESCE(_reason, 'Grade 9 transition'),
     auth.uid()
   );
 
-  RETURN assignment_id;
+  RETURN v_assignment_id;
 END;
 $$;
 

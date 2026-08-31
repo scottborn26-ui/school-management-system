@@ -34,6 +34,10 @@ import { useSchool } from "@/hooks/use-school";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { LeavingCertificateDialog } from "@/components/leaving-certificate-dialog";
 import { PhotoUploader } from "@/components/photo-uploader";
+import {
+  formatSeniorPathwaySummary,
+  isSeniorSchoolGrade,
+} from "@/lib/pathway-display";
 
 export const Route = createFileRoute("/_authenticated/learners/$learnerId")({
   component: () => (
@@ -56,44 +60,57 @@ function LearnerProfilePage() {
   const { data, isLoading } = useQuery({
     queryKey: ["learner-profile", school.schoolId, learnerId],
     queryFn: async () => {
-      const [learner, enrollments, classHistory, statuses, exits, audits] = await Promise.all([
-        client
-          .from("learners")
-          .select("*")
-          .eq("id", learnerId)
-          .eq("school_id", school.schoolId)
-          .single(),
-        client
-          .from("enrollments")
-          .select(
-            "id, academic_year_id, grade, stream_id, effective_date, is_active, academic_years(name), streams(name)",
-          )
-          .eq("learner_id", learnerId)
-          .order("effective_date", { ascending: true }),
-        client
-          .from("student_class_history")
-          .select(
-            "id, grade, enrollment_date, end_date, status, promotion_status, remarks, movement_reason, academic_year_id, streams(name)",
-          )
-          .eq("learner_id", learnerId)
-          .order("enrollment_date", { ascending: true }),
-        client
-          .from("student_status_history")
-          .select("id, previous_status, new_status, effective_date, reason, notes, changed_at")
-          .eq("learner_id", learnerId)
-          .order("changed_at", { ascending: false }),
-        client
-          .from("student_exit_records")
-          .select("*")
-          .eq("learner_id", learnerId)
-          .order("exit_date", { ascending: false }),
-        client
-          .from("audit_logs")
-          .select("id, action, entity, reason, before_data, after_data, actor_name, created_at")
-          .eq("entity_id", learnerId)
-          .order("created_at", { ascending: false }),
-      ]);
+      const [learner, enrollments, classHistory, statuses, exits, audits, pathwayAssignment] =
+        await Promise.all([
+          client
+            .from("learners")
+            .select("*")
+            .eq("id", learnerId)
+            .eq("school_id", school.schoolId)
+            .single(),
+          client
+            .from("enrollments")
+            .select(
+              "id, academic_year_id, grade, stream_id, effective_date, is_active, academic_years(name), streams(name)",
+            )
+            .eq("learner_id", learnerId)
+            .order("effective_date", { ascending: true }),
+          client
+            .from("student_class_history")
+            .select(
+              "id, grade, enrollment_date, end_date, status, promotion_status, remarks, movement_reason, academic_year_id, streams(name)",
+            )
+            .eq("learner_id", learnerId)
+            .order("enrollment_date", { ascending: true }),
+          client
+            .from("student_status_history")
+            .select("id, previous_status, new_status, effective_date, reason, notes, changed_at")
+            .eq("learner_id", learnerId)
+            .order("changed_at", { ascending: false }),
+          client
+            .from("student_exit_records")
+            .select("*")
+            .eq("learner_id", learnerId)
+            .order("exit_date", { ascending: false }),
+          client
+            .from("audit_logs")
+            .select("id, action, entity, reason, before_data, after_data, actor_name, created_at")
+            .eq("entity_id", learnerId)
+            .order("created_at", { ascending: false }),
+          client
+            .from("student_pathway_assignments")
+            .select(
+              "id, grade, pathway_id, track_id, strand_id, subject_combination_id, senior_pathways(name), pathway_tracks(name), pathway_strands(name), subject_combinations(name)",
+            )
+            .eq("learner_id", learnerId)
+            .eq("school_id", school.schoolId)
+            .eq("status", "current")
+            .maybeSingle(),
+        ]);
       if (learner.error) throw learner.error;
+      if (pathwayAssignment.error && pathwayAssignment.error.code !== "PGRST116") {
+        throw pathwayAssignment.error;
+      }
       return {
         learner: learner.data,
         enrollments: enrollments.data ?? [],
@@ -101,6 +118,7 @@ function LearnerProfilePage() {
         statuses: statuses.data ?? [],
         exits: exits.data ?? [],
         audits: audits.data ?? [],
+        pathwayAssignment: pathwayAssignment.data ?? null,
       };
     },
   });
@@ -136,6 +154,9 @@ function LearnerProfilePage() {
 
   const statusLabel = String(learner.status).replaceAll("_", " ");
   const placement = `${learner.current_grade ?? "Not assigned"}${currentEnrollment?.streams?.name ? ` ${currentEnrollment.streams.name}` : ""}`;
+  const seniorPathwaySummary = isSeniorSchoolGrade(learner.current_grade)
+    ? formatSeniorPathwaySummary(data.pathwayAssignment)
+    : null;
   const age = learner.date_of_birth
     ? Math.max(0, new Date().getFullYear() - new Date(learner.date_of_birth).getFullYear())
     : null;
@@ -197,6 +218,9 @@ function LearnerProfilePage() {
           <CardContent className="space-y-4">
             <ProfileRow label="Class" value={learner.current_grade} />
             <ProfileRow label="Stream" value={currentEnrollment?.streams?.name} />
+            {isSeniorSchoolGrade(learner.current_grade) ? (
+              <ProfileRow label="Pathway" value={seniorPathwaySummary} />
+            ) : null}
             <ProfileRow label="Class Teacher" value={null} />
             <ProfileRow label="Subjects" value="Not captured" />
             <ProfileRow label="Date of Admission" value={formatDate(learner.admission_date)} />
