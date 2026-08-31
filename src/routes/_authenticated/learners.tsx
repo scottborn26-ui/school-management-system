@@ -727,15 +727,15 @@ function LearnersPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-teal-50/30 p-4 shadow-sm ring-1 ring-slate-100">
+            <section className="min-w-0 space-y-4 rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.16)] ring-1 ring-slate-800/80">
               <SectionHeader icon={UserRound} label="Profile summary" />
               {drawerPathwaySummary && (
                 <div
                   className={cn(
                     "rounded-2xl border p-4 shadow-sm transition-colors",
                     hasDrawerPathway
-                      ? "border-teal-200 bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50"
-                      : "border-amber-200 bg-gradient-to-r from-amber-50 via-yellow-50 to-orange-50",
+                      ? "border-teal-300/70 bg-gradient-to-r from-teal-100 via-emerald-50 to-cyan-50"
+                      : "border-amber-300/80 bg-gradient-to-r from-amber-100 via-yellow-50 to-orange-50",
                   )}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -817,7 +817,7 @@ function LearnersPage() {
               </section>
             )}
 
-            <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-teal-50/20 p-4 shadow-sm ring-1 ring-slate-100">
+            <section className="min-w-0 space-y-4 rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.12)] ring-1 ring-slate-800/80">
               <SectionHeader icon={BookOpenCheck} label="Academic overview" />
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <StatCard icon={GraduationCap} label="Average score" value={averageScore === null ? "—" : String(averageScore)} support={drawerMarks.length ? "Across assessments" : "No scores yet"} />
@@ -860,7 +860,7 @@ function LearnersPage() {
             </section>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-amber-50/20 to-teal-50/20 p-4 shadow-sm ring-1 ring-slate-100">
+              <section className="min-w-0 space-y-4 rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-amber-50/20 to-slate-100 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/80">
                 <SectionHeader icon={Wallet} label="Fee account" />
                 {canViewFinance ? (
                   <div className="text-sm text-slate-600">
@@ -872,9 +872,9 @@ function LearnersPage() {
                       const outstandingTotal = Math.max(0, totalFees - paidTotal);
                       return (
                         <div className="grid gap-3 sm:grid-cols-3">
-                          <MoneyStat label="Total fees" value={formatKES(totalFees)} />
-                          <MoneyStat label="Paid" value={formatKES(paidTotal)} tone="teal" />
-                          <MoneyStat label="Outstanding" value={formatKES(outstandingTotal)} tone="amber" />
+                          <MoneyStat label="Total fees" value={formatKES(totalFees)} className="min-w-[180px]" />
+                          <MoneyStat label="Paid" value={formatKES(paidTotal)} tone="teal" className="min-w-[180px]" />
+                          <MoneyStat label="Outstanding" value={formatKES(outstandingTotal)} tone="amber" className="min-w-[180px]" />
                         </div>
                       );
                     })() : <EmptyState icon={Wallet} message="No payment history recorded." />}
@@ -882,7 +882,7 @@ function LearnersPage() {
                 ) : <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">Restricted — finance details are hidden for this role.</div>}
               </section>
 
-              <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-teal-50/20 p-4 shadow-sm ring-1 ring-slate-100">
+              <section className="min-w-0 space-y-4 rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-slate-100 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/80">
                 <SectionHeader icon={FileText} label="Academic reports" />
                 <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-teal-50/40 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
@@ -901,7 +901,7 @@ function LearnersPage() {
               </section>
             </div>
 
-            <section className="min-w-0 space-y-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-amber-50/20 p-4 shadow-sm ring-1 ring-slate-100">
+            <section className="min-w-0 space-y-4 rounded-3xl border border-slate-200 bg-gradient-to-br from-white via-slate-50 to-amber-50/20 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/80">
               <SectionHeader icon={Flag} label="Notes & flags" />
               <div className="rounded-xl border border-dashed border-slate-200 bg-gradient-to-r from-slate-50 via-slate-50 to-teal-50/40 p-4 text-sm leading-6 text-slate-600">
                 <div className="whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-700">
@@ -1389,11 +1389,11 @@ function LearnersPage() {
 
 function SectionHeader({ icon: Icon, label }: { icon: typeof UserRound; label: string }) {
   return (
-    <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
-      <div className="rounded-lg bg-teal-50 p-1.5 text-teal-700">
+    <div className="flex items-center gap-2 border-b border-slate-200/80 pb-3">
+      <div className="rounded-xl bg-slate-900 p-1.5 text-slate-100 shadow-sm ring-1 ring-slate-700">
         <Icon className="size-4" />
       </div>
-      <div className="text-[12px] font-semibold uppercase tracking-[0.04em] text-slate-600">{label}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700">{label}</div>
     </div>
   );
 }
@@ -1421,13 +1421,13 @@ function StatCard({
   support: string;
 }) {
   return (
-    <div className="min-w-0 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white px-3 py-3 shadow-sm transition-shadow hover:shadow-md">
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-        <Icon className="size-3.5 text-teal-600" />
+    <div className="min-w-0 rounded-2xl border border-slate-700/70 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 px-3 py-3 shadow-[0_10px_25px_rgba(15,23,42,0.18)] transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-600">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">
+        <Icon className="size-3.5 text-teal-300" />
         <span className="truncate">{label}</span>
       </div>
-      <div className="mt-2 text-xl font-semibold leading-6 tracking-[-0.02em] text-slate-950">{value}</div>
-      <div className="mt-1 text-xs leading-5 text-slate-500">{support}</div>
+      <div className="mt-2 text-xl font-semibold leading-6 tracking-[-0.02em] text-white">{value}</div>
+      <div className="mt-1 text-xs leading-5 text-slate-300">{support}</div>
     </div>
   );
 }
@@ -1436,30 +1436,33 @@ function MoneyStat({
   label,
   value,
   tone = "neutral",
+  className,
 }: {
   label: string;
   value: string;
   tone?: "neutral" | "teal" | "amber";
+  className?: string;
 }) {
   return (
     <div
       className={cn(
-        "min-w-0 rounded-xl border px-3 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md",
+        "min-w-0 w-full overflow-hidden rounded-2xl border px-2.5 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md",
         tone === "amber"
-          ? "border-amber-200 bg-gradient-to-br from-amber-50 to-white"
+          ? "border-amber-200/80 bg-gradient-to-br from-amber-50 via-white to-amber-100"
           : tone === "teal"
-            ? "border-teal-100 bg-gradient-to-br from-teal-50/80 to-white"
-            : "border-slate-200 bg-gradient-to-br from-slate-50 to-white",
+            ? "border-teal-200/80 bg-gradient-to-br from-teal-50 via-white to-cyan-50"
+            : "border-slate-200 bg-gradient-to-br from-slate-50 via-white to-slate-100",
+        className,
       )}
     >
-      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">{label}</div>
+      <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</div>
       <div
         className={cn(
-          "mt-2 break-words text-[13px] font-semibold leading-5 sm:text-[15px]",
-          tone === "amber" ? "text-amber-700" : tone === "teal" ? "text-teal-700" : "text-slate-950",
+          "mt-2 min-w-0 overflow-hidden text-center text-[12px] font-bold leading-tight tracking-[-0.01em] sm:text-[13px]",
+          tone === "amber" ? "text-amber-700" : tone === "teal" ? "text-teal-700" : "text-slate-900",
         )}
       >
-        {value}
+        <span className="block truncate whitespace-nowrap">{value}</span>
       </div>
     </div>
   );
@@ -1481,19 +1484,19 @@ function FactItem({
     value.toLowerCase().includes("not assigned");
 
   return (
-    <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 p-3.5 shadow-sm transition-shadow hover:shadow-md">
+    <div className="min-w-0 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-slate-100 p-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-0.5 hover:shadow-md">
       <div className="flex items-center gap-2">
-        <div className="rounded-lg bg-teal-50 p-1.5 text-teal-600 ring-1 ring-teal-100">
+        <div className="rounded-xl bg-slate-900 p-1.5 text-slate-100 shadow-sm ring-1 ring-slate-700">
           <Icon className="size-3.5" />
         </div>
-        <div className="text-[11px] font-medium uppercase leading-relaxed tracking-[0.1em] text-slate-500">{label}</div>
+        <div className="text-[10px] font-semibold uppercase leading-relaxed tracking-[0.12em] text-slate-500">{label}</div>
       </div>
       <div
         className={cn(
-          "mt-3 break-words text-[15px] font-semibold leading-6 text-slate-950",
+          "mt-3 break-words text-[15px] font-semibold leading-6 text-slate-900",
           isMissing
             ? "rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 font-medium text-amber-700"
-            : "text-slate-800",
+            : "text-slate-900",
         )}
       >
         {value}
